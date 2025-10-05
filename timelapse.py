@@ -107,9 +107,7 @@ def get_gps(master):
     lat = None
     lon = None
     gps_time = None
-    #latcheck = False
     while True:
-        # Use GLOBAL_POSITION_INT for position
         # Use GPS_RAW_INT to get GPS time
         msg = master.recv_match(type="GPS_RAW_INT", blocking=False)
         # Only process if message exists, fix is valid, and GPS week/time are present
@@ -146,7 +144,6 @@ seq = 1
 interval = 2
 mode_check = 'AUTO'
 base_dir = "/home/pi/timelapse"
-
 
 # wait time - optional
 if delay_start_condition:
