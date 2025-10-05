@@ -7,16 +7,22 @@ import piexif
 
 def timelapse(master,mode_check,interval,base_dir):
     seq = 1
-    session_dir = create_datadir(base_dir)
+    dt, session_dir = create_datadir(base_dir)
     pstr = f'Geotagged images will be saved to {session_dir}'
     print(pstr)
+    log_name = dt.strftime("%Y%m%d_%H%M%S_img_log.csv")
+    log_path = os.path.join(session_dir,log_name)
+    pstr = f'Log file: {log_path}'
+    print(pstr)
+    f = open(log_path,'w+')
     starttime = datetime.datetime.now()
     while True:
         mode = get_mode(master)
         armed = get_armed(master)
         if mode != mode_check or armed == 0:
-            pstr = 'Mode or arming state changed. Stopping timelapse'
+            pstr = 'Mode or arming state changed. Stopping timelapse. Closing log file'
             print(pstr)
+            f.close()
             break
         else:
             dt = datetime.datetime.now()
@@ -27,6 +33,8 @@ def timelapse(master,mode_check,interval,base_dir):
                 fpath = grab_still_gps(seq,session_dir,lat,lon,dt)
                 pstr = f'image {fpath} acquired at {lat}, {lon}'
                 print(pstr)
+                pstr = f'{fpath},{lat},{lon},{dt.strftime("%Y-%m-%d %H%M%S")}\n'
+                f.write(pstr)
                 seq += 1
 
 def create_datadir(base_dir):
@@ -34,7 +42,7 @@ def create_datadir(base_dir):
     name = dt.strftime("%Y%m%d_%H%M%S_UTC")
     session_dir = os.path.join(base_dir, name)
     os.makedirs(session_dir, exist_ok=True)
-    return session_dir
+    return dt, session_dir
 
 def decimal_to_dms_rational(value):
     v = abs(value)
