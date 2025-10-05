@@ -2,7 +2,7 @@ import os
 import time
 import subprocess
 from pymavlink import mavutil
-import datetime
+from datetime import datetime, timedelta
 import piexif
 
 def timelapse(master,mode_check,interval,base_dir):
@@ -15,7 +15,7 @@ def timelapse(master,mode_check,interval,base_dir):
     pstr = f'Log file: {log_path}'
     print(pstr)
     f = open(log_path,'w+')
-    starttime = datetime.datetime.now()
+    starttime = datetime.now()
     while True:
         mode = get_mode(master)
         armed = get_armed(master)
@@ -25,11 +25,11 @@ def timelapse(master,mode_check,interval,base_dir):
             f.close()
             break
         else:
-            dt = datetime.datetime.now()
+            dt = datetime.now()
             elapsed = (dt - starttime).total_seconds()
             if elapsed >= interval:
                 starttime = datetime.datetime.now()
-                lat,lon = get_gps(master)
+                lat,lon,gps_time = get_gps(master)
                 fpath = grab_still_gps(seq,session_dir,lat,lon,dt)
                 pstr = f'image {fpath} acquired at {lat}, {lon}'
                 print(pstr)
@@ -52,18 +52,18 @@ def decimal_to_dms_rational(value):
     sec = (rem - minute) * 60.0
     return ((deg,1),(minute,1),(int(sec*1000),1000))
 
-def write_exif_with_piexif(filepath, lat, lon, dt):
+def write_exif_with_piexif(filepath, lat, lon, gps_time):
     gps_ifd = {}
     gps_ifd[piexif.GPSIFD.GPSLatitudeRef]  = b'N' if lat >= 0 else b'S'
     gps_ifd[piexif.GPSIFD.GPSLatitude]     = decimal_to_dms_rational(lat)
     gps_ifd[piexif.GPSIFD.GPSLongitudeRef] = b'E' if lon >= 0 else b'W'
     gps_ifd[piexif.GPSIFD.GPSLongitude]    = decimal_to_dms_rational(lon)
-    dt_str = dt.strftime("%Y:%m:%d %H:%M:%S")
+    dt_str = gps_time.strftime("%Y:%m:%d %H:%M:%S")
     exif_ifd = {piexif.ExifIFD.DateTimeOriginal: dt_str.encode()}
     exif_dict = {"0th": {}, "Exif": exif_ifd, "GPS": gps_ifd, "1st": {}, "thumbnail": None}
     piexif.insert(piexif.dump(exif_dict), filepath)
 
-def grab_still_gps(seq,session_dir,lat,lon,dt):
+def grab_still_gps(seq,session_dir,lat,lon,gps_time):
     device = "/dev/video0"
     w = 1920
     h = 1080
@@ -81,7 +81,7 @@ def grab_still_gps(seq,session_dir,lat,lon,dt):
         fpath
     ]
     subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    write_exif_with_piexif(fpath, lat, lon, dt)
+    write_exif_with_piexif(fpath, lat, lon, gps_time)
     return fpath
 
 def get_armed(master):
@@ -106,31 +106,35 @@ def get_mode(master):
 def get_gps(master):
     lat = None
     lon = None
-    latcheck = False
-    while not latcheck:
-        # Try GLOBAL_POSITION_INT first
-        msg = master.recv_match(type="GLOBAL_POSITION_INT", blocking=False)
-        if msg:
+    gps_time = None
+    #latcheck = False
+    while True:
+        # Use GLOBAL_POSITION_INT for position
+        # Use GPS_RAW_INT to get GPS time
+        msg = master.recv_match(type="GPS_RAW_INT", blocking=False)
+        # Only process if message exists, fix is valid, and GPS week/time are present
+        if (
+                msg
+                and msg.fix_type >= 2
+                and hasattr(msg, "time_week")
+                and hasattr(msg, "time_week_ms")
+                and msg.time_week > 0
+                and msg.time_week_ms > 0
+        ):
             lat = msg.lat / 1e7
-            latcheck = True
             lon = msg.lon / 1e7
-            pstr = "Messages received"
-            print(pstr)
-            pstr = f"[GLOBAL_POSITION_INT] lat={lat:.7f}, lon={lon:.7f}"
-            print(pstr)
-        if lat is None:
-            # Fallback to GPS_RAW_INT
-            msg = master.recv_match(type="GPS_RAW_INT", blocking=False)
-            if msg:
-                lat = msg.lat / 1e7
-                latcheck = True
-                lon = msg.lon / 1e7
-                pstr = "Messages received"
-                print(pstr)
-                pstr = f"[GPS_RAW_INT] lat={lat:.7f}, lon={lon:.7f}"
-                print(pstr)
+
+            # Convert GPS week + ms to UTC datetime
+            gps_epoch = datetime(1980, 1, 6)
+            gps_time = gps_epoch + timedelta(weeks=msg.time_week, milliseconds=msg.time_week_ms)
+            # Optionally correct for leap seconds (~18s)
+            # gps_time -= timedelta(seconds=18)
+
+            print(f"[GPS_RAW_INT] lat={lat:.7f}, lon={lon:.7f}, time={gps_time.strftime('%Y%m%d_%H%M%S')}")
+            break
         time.sleep(0.1)
-    return lat,lon
+    return lat,lon,gps_time
+
 
 # constants - don't change these
 MAVLINK_ENDPOINT = "tcp:127.0.0.1:5777"  # change if needed
