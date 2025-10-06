@@ -108,7 +108,7 @@ def get_gps(master):
     lon = None
     gps_time = None
     while True:
-        # Use GPS_RAW_INT to get GPS time
+        # Emlid M2 GPS2
         msg = master.recv_match(type="GPS2_RAW", blocking=False)
         # Only process if message exists, fix is valid, and GPS week/time are present
         if (
