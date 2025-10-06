@@ -2,7 +2,7 @@ import os
 import time
 import subprocess
 from pymavlink import mavutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import piexif
 
 def timelapse(master,mode_check,interval,base_dir):
@@ -28,7 +28,7 @@ def timelapse(master,mode_check,interval,base_dir):
             dt = datetime.now()
             elapsed = (dt - starttime).total_seconds()
             if elapsed >= interval:
-                starttime = datetime.datetime.now()
+                starttime = datetime.now()
                 lat,lon,gps_time = get_gps(master)
                 fpath = grab_still_gps(seq,session_dir,lat,lon,dt)
                 pstr = f'image {fpath} acquired at {lat}, {lon}'
@@ -38,7 +38,7 @@ def timelapse(master,mode_check,interval,base_dir):
                 seq += 1
 
 def create_datadir(base_dir):
-    dt = datetime.datetime.now()
+    dt = datetime.now()
     name = dt.strftime("%Y%m%d_%H%M%S_UTC")
     session_dir = os.path.join(base_dir, name)
     os.makedirs(session_dir, exist_ok=True)
@@ -109,24 +109,17 @@ def get_gps(master):
     gps_time = None
     while True:
         # Use GPS_RAW_INT to get GPS time
-        msg = master.recv_match(type="GPS_RAW_INT", blocking=False)
+        msg = master.recv_match(type="GPS2_RAW", blocking=False)
         # Only process if message exists, fix is valid, and GPS week/time are present
         if (
                 msg
                 and msg.fix_type >= 2
-                and hasattr(msg, "time_week")
-                and hasattr(msg, "time_week_ms")
-                and msg.time_week > 0
-                and msg.time_week_ms > 0
+                and msg.lat / 1e7 != 0
+                and msg.lat / 1e7 != 0
         ):
             lat = msg.lat / 1e7
             lon = msg.lon / 1e7
-
-            # Convert GPS week + ms to UTC datetime
-            gps_epoch = datetime(1980, 1, 6)
-            gps_time = gps_epoch + timedelta(weeks=msg.time_week, milliseconds=msg.time_week_ms)
-            # Optionally correct for leap seconds (~18s)
-            # gps_time -= timedelta(seconds=18)
+            gps_time = datetime.fromtimestamp(msg.time_usec / 1e6, tz=timezone.utc)
 
             print(f"[GPS_RAW_INT] lat={lat:.7f}, lon={lon:.7f}, time={gps_time.strftime('%Y%m%d_%H%M%S')}")
             break
@@ -160,9 +153,9 @@ print(f"Connected to system {master.target_system}, component {master.target_com
 pstr = 'Checking GPS'
 print(pstr)
 gpscheck = False
-lat,lon = get_gps(master)
+lat,lon,gps_time = get_gps(master)
 
-pstr = f'Lat: {lat}. Lon: {lon}'
+pstr = f'Lat: {lat}. Lon: {lon}. Time: {gps_time}'
 print(pstr)
 
 if lat is not None:
