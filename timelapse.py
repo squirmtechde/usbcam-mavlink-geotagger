@@ -33,7 +33,8 @@ def timelapse(master,mode_check,interval,base_dir):
                 fpath = grab_still_gps(seq,session_dir,lat,lon,dt)
                 pstr = f'image {fpath} acquired at {lat}, {lon}'
                 print(pstr)
-                pstr = f'{fpath},{lat},{lon},{dt.strftime("%Y-%m-%d %H%M%S")}\n'
+                #pstr = f'{fpath},{lat},{lon},{dt.strftime("%Y-%m-%d %H%M%S")}\n'
+                pstr = f'{fpath},{lat},{lon},{gps_time.strftime("%Y-%m-%d %H%M%S")}\n'
                 f.write(pstr)
                 seq += 1
 
@@ -110,6 +111,7 @@ def get_gps(master):
     while True:
         # Emlid M2 GPS2
         msg = master.recv_match(type="GPS2_RAW", blocking=False)
+        gps_time = datetime.now()
         # Only process if message exists, fix is valid, and GPS week/time are present
         if (
                 msg
@@ -119,13 +121,11 @@ def get_gps(master):
         ):
             lat = msg.lat / 1e7
             lon = msg.lon / 1e7
-            gps_time = datetime.fromtimestamp(msg.time_usec / 1e6, tz=timezone.utc)
-
             print(f"[GPS_RAW_INT] lat={lat:.7f}, lon={lon:.7f}, time={gps_time.strftime('%Y%m%d_%H%M%S')}")
+
             break
         time.sleep(0.1)
     return lat,lon,gps_time
-
 
 # constants - don't change these
 MAVLINK_ENDPOINT = "tcp:127.0.0.1:5777"  # change if needed

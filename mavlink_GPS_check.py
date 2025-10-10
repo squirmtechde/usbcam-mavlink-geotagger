@@ -1,5 +1,5 @@
 from pymavlink import mavutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 
 def get_gps(master):
@@ -11,12 +11,16 @@ def get_gps(master):
 
         if (
             msg
+            and msg.lat > 0
         ):
             lat = msg.lat / 1e7
             lon = msg.lon / 1e7
-
-            print(f"[GPS_RAW_INT id={msg.id}] lat={lat:.7f}, lon={lon:.7f}")
-            break
+            msg2 = master.recv_match(type="SYSTEM_TIME", blocking=False)
+            if msg2 and msg2.time_unix_usec > 0:
+                gps_time = datetime.fromtimestamp(msg2.time_unix_usec / 1e6, tz=timezone.utc)
+                dt = datetime.now()
+                print(f"[GPS_RAW_INT id={msg.id}] lat={lat:.7f}, lon={lon:.7f}, time:{gps_time}, datetime.now:{dt.strftime('%Y-%m-%d %H%M%S')}")
+                break
 
         time.sleep(0.1)
 
